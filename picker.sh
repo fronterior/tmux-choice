@@ -123,7 +123,7 @@ render() {
   local content_h=$((TERM_LINES - header_h))
 
   # ── Header / Breadcrumb (list panel only) ──
-  printf '\033[H'
+  printf '\033[H\033[0m'
   printf "${C_GREEN}${C_BOLD}"
   local breadcrumb=" tmux-choice"
   case $LEVEL in
