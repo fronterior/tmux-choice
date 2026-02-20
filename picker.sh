@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tmux-picker: Shell-based tmux session picker with TUI
+# tmux-choice: Shell-based tmux session picker with TUI
 # Pure shell script — no fzf dependency, ANSI escape rendering
 
 set -euo pipefail
@@ -124,7 +124,7 @@ render() {
   # ── Header / Breadcrumb ──
   printf '\033[H'
   printf "${C_GREEN}${C_BOLD}"
-  local breadcrumb=" tmux-picker"
+  local breadcrumb=" tmux-choice"
   case $LEVEL in
     0) breadcrumb="$breadcrumb > sessions" ;;
     1) breadcrumb="$breadcrumb > $PARENT_SESSION > windows" ;;
