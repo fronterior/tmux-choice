@@ -12,7 +12,8 @@ ITEMS=()         # display labels
 TARGETS=()       # tmux target identifiers
 EXTRA=()         # extra info (window count, pane info, etc.)
 PARENT_SESSION="" # selected session name (for level 1,2)
-PARENT_WINDOW="" # selected window index (for level 2)
+PARENT_WINDOW=""      # selected window index (for level 2)
+PARENT_WINDOW_NAME="" # selected window name (for breadcrumb)
 
 # Navigation history — remember cursor position when drilling down
 HIST_CURSOR_0=0
@@ -121,21 +122,26 @@ render() {
   local header_h=1
   local content_h=$((TERM_LINES - header_h))
 
-  # ── Header / Breadcrumb ──
+  # ── Header / Breadcrumb (list panel only) ──
   printf '\033[H'
   printf "${C_GREEN}${C_BOLD}"
   local breadcrumb=" tmux-choice"
   case $LEVEL in
-    0) breadcrumb="$breadcrumb > sessions" ;;
-    1) breadcrumb="$breadcrumb > $PARENT_SESSION > windows" ;;
-    2) breadcrumb="$breadcrumb > $PARENT_SESSION:$PARENT_WINDOW > panes" ;;
+    1) breadcrumb="$breadcrumb > $PARENT_SESSION" ;;
+    2) breadcrumb="$breadcrumb > $PARENT_SESSION > $PARENT_WINDOW_NAME" ;;
   esac
-  printf '%-*.*s' "$TERM_COLS" "$TERM_COLS" "$breadcrumb"
-  printf "${C_RESET}"
+  local nav_l=" " nav_r=" "
+  if ((LEVEL > 0)); then nav_l="<"; fi
+  if ((LEVEL < 2)); then nav_r=">"; fi
+  local right_part=" $nav_l $nav_r "
+  local right_len=${#right_part}
+  local left_len=$((list_w - right_len))
+  printf '%-*.*s' "$left_len" "$left_len" "$breadcrumb"
+  printf "${C_RESET}${C_DIM}%s${C_RESET}" "$right_part"
 
-  # ── Vertical border ──
+  # ── Vertical border (full height including header) ──
   printf "${C_BORDER}"
-  for ((r = header_h + 1; r <= TERM_LINES; r++)); do
+  for ((r = 1; r <= TERM_LINES; r++)); do
     printf '\033[%d;%dH│' "$r" "$border_col"
   done
   printf "${C_RESET}"
@@ -214,16 +220,17 @@ render() {
     esac
 
     local pw=$((preview_w - 2))
+    local preview_h=$TERM_LINES
     # Clear preview area first
     local _r
-    for ((_r = 0; _r < content_h; _r++)); do
-      printf '\033[%d;%dH\033[K' "$((header_h + 1 + _r))" "$preview_col"
+    for ((_r = 0; _r < preview_h; _r++)); do
+      printf '\033[%d;%dH\033[K' "$((_r + 1))" "$preview_col"
     done
     # Draw preview content
     local line_num=0
     while IFS= read -r line; do
-      ((line_num >= content_h)) && break
-      printf '\033[%d;%dH %.*s' "$((header_h + 1 + line_num))" "$preview_col" "$pw" "$line"
+      ((line_num >= preview_h)) && break
+      printf '\033[%d;%dH %.*s' "$((line_num + 1))" "$preview_col" "$pw" "$line"
       ((++line_num))
     done < <(tmux capture-pane -ep -t "$target" 2>/dev/null || echo "(no preview)")
   fi
@@ -277,6 +284,7 @@ navigate_right() {
     HIST_OFFSET_1=$OFFSET
     # Drill into window
     PARENT_WINDOW="${TARGETS[$CURSOR]}"
+    PARENT_WINDOW_NAME="${ITEMS[$CURSOR]}"
     LEVEL=2
     load_panes
     find_active_index; CURSOR=$REPLY
