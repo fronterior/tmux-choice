@@ -4,4 +4,4 @@
 
 CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-tmux bind-key s display-popup -E -w 80% -h 80% "$CURRENT_DIR/picker.sh"
+tmux bind-key s display-popup -E -w 60% -h 40% "$CURRENT_DIR/picker.sh"

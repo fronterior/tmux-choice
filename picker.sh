@@ -42,7 +42,7 @@ C_BLACK_ON_GREEN='\033[30;42m'
 C_WHITE='\033[97m'
 C_GRAY='\033[90m'
 C_BORDER='\033[90m'
-C_ACTIVE='\033[33m' # yellow for active indicator
+C_ACTIVE='\033[36m' # cyan for active indicator
 
 # ── Helpers ────────────────────────────────────────────────────
 get_term_size() {
@@ -158,12 +158,12 @@ render() {
   get_term_size
   local total=${#ITEMS[@]}
 
-  # Layout: preview on left (60%), list on right (40%)
+  # Layout: list on left (40%), preview on right (60%)
   local list_w=$((TERM_COLS * 40 / 100))
   local preview_w=$((TERM_COLS - list_w - 1)) # -1 for border
-  local preview_col=1
-  local border_col=$((preview_w + 1))
-  local list_col=$((preview_w + 2))
+  local list_col=1
+  local border_col=$((list_w + 1))
+  local preview_col=$((list_w + 2))
 
   # Header height = 1 (breadcrumb), footer = 0
   local header_h=1
@@ -223,34 +223,34 @@ render() {
 
     # Calculate padding: label on left, extra on right
     local extra_len=${#extra}
-    local max_label=$((usable_w - extra_len - 4)) # 4 = marker(2) + gap(2)
+    local max_label=$((usable_w - extra_len - 5)) # 5 = marker(3) + gap(1) + trailing(1)
     ((max_label < 1)) && max_label=1
 
     # Truncate label
     local display_label="${label:0:$max_label}"
     local label_len=${#display_label}
-    local padding=$((usable_w - label_len - extra_len - 4))
+    local padding=$((usable_w - label_len - extra_len - 5))
     ((padding < 0)) && padding=0
 
     if ((idx == CURSOR)); then
       # Selected item — highlighted
       printf "${C_BLACK_ON_GREEN}"
       if ((is_active)); then
-        printf ' %s' "●"
+        printf ' %s ' "*"
       else
-        printf '  '
+        printf '   '
       fi
-      printf ' %s' "$display_label"
+      printf '%s' "$display_label"
       printf '%*s' "$padding" ''
       printf '%s ' "$extra"
       printf "${C_RESET}"
     else
       if ((is_active)); then
-        printf " ${C_ACTIVE}●${C_RESET}"
+        printf " ${C_ACTIVE}*${C_RESET} "
       else
-        printf '  '
+        printf '   '
       fi
-      printf " ${C_WHITE}%s${C_RESET}" "$display_label"
+      printf "${C_WHITE}%s${C_RESET}" "$display_label"
       printf '%*s' "$padding" ''
       printf "${C_DIM}%s${C_RESET} " "$extra"
     fi
