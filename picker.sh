@@ -112,7 +112,7 @@ render() {
   local total=${#ITEMS[@]}
 
   # Layout: list on left (40%), preview on right (60%)
-  local list_w=$((TERM_COLS * 40 / 100))
+  local list_w=$((TERM_COLS * 25 / 100))
   local preview_w=$((TERM_COLS - list_w - 1)) # -1 for border
   local list_col=1
   local border_col=$((list_w + 1))
@@ -226,13 +226,15 @@ render() {
     for ((_r = 0; _r < preview_h; _r++)); do
       printf '\033[%d;%dH\033[K' "$((_r + 1))" "$preview_col"
     done
-    # Draw preview content
+    # Draw preview content (disable line wrap to clip at terminal edge)
+    printf '\033[?7l'
     local line_num=0
     while IFS= read -r line; do
       ((line_num >= preview_h)) && break
-      printf '\033[%d;%dH %.*s' "$((line_num + 1))" "$preview_col" "$pw" "$line"
+      printf '\033[%d;%dH %s' "$((line_num + 1))" "$preview_col" "$line"
       ((++line_num))
     done < <(tmux capture-pane -ep -t "$target" 2>/dev/null || echo "(no preview)")
+    printf '\033[?7h'
   fi
 
   # ── Scrollbar indicator ──
