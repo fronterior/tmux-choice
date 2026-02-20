@@ -22,16 +22,14 @@ HIST_OFFSET_1=0
 
 # ── Terminal setup ─────────────────────────────────────────────
 cleanup() {
-  printf '\033[?25h'   # show cursor
-  printf '\033[?1049l' # restore screen
+  printf '\033[?25h\033[?1049l'
   stty "$ORIG_STTY" 2>/dev/null || true
 }
 trap cleanup EXIT
 
 ORIG_STTY=$(stty -g)
 stty -echo -icanon min 1 time 0
-printf '\033[?1049h' # alternate screen
-printf '\033[?25l'   # hide cursor
+printf '\033[?1049h\033[?25l\033[2J'
 
 # ── Colors ─────────────────────────────────────────────────────
 C_RESET='\033[0m'
@@ -46,32 +44,10 @@ C_ACTIVE='\033[36m' # cyan for active indicator
 
 # ── Helpers ────────────────────────────────────────────────────
 get_term_size() {
-  TERM_LINES=$(tput lines)
-  TERM_COLS=$(tput cols)
-}
-
-# Move cursor to row, col (1-based)
-move_to() {
-  printf '\033[%d;%dH' "$1" "$2"
-}
-
-# Print text at position, truncated to max width
-print_at() {
-  local row=$1 col=$2 max_w=$3 text=$4
-  move_to "$row" "$col"
-  # Truncate visible text to max_w
-  printf '%.*s' "$max_w" "$text"
-}
-
-# Fill a region with spaces
-fill_rect() {
-  local r1=$1 c1=$2 rows=$3 cols=$4
-  local blank
-  blank=$(printf '%*s' "$cols" '')
-  for ((r = r1; r < r1 + rows; r++)); do
-    move_to "$r" "$c1"
-    printf '%s' "$blank"
-  done
+  local size
+  size=$(stty size)
+  TERM_LINES=${size% *}
+  TERM_COLS=${size#* }
 }
 
 # ── Data loading ───────────────────────────────────────────────
@@ -79,12 +55,8 @@ load_sessions() {
   ITEMS=()
   TARGETS=()
   EXTRA=()
-  local line
-  while IFS= read -r line; do
-    local name windows attached
-    name=$(echo "$line" | cut -d'|' -f1)
-    windows=$(echo "$line" | cut -d'|' -f2)
-    attached=$(echo "$line" | cut -d'|' -f3)
+  local name windows attached
+  while IFS='|' read -r name windows attached; do
     ITEMS+=("$name")
     TARGETS+=("$name")
     local suffix="${windows}W"
@@ -97,13 +69,8 @@ load_windows() {
   ITEMS=()
   TARGETS=()
   EXTRA=()
-  local line
-  while IFS= read -r line; do
-    local idx name panes active
-    idx=$(echo "$line" | cut -d'|' -f1)
-    name=$(echo "$line" | cut -d'|' -f2)
-    panes=$(echo "$line" | cut -d'|' -f3)
-    active=$(echo "$line" | cut -d'|' -f4)
+  local idx name panes active
+  while IFS='|' read -r idx name panes active; do
     ITEMS+=("$name")
     TARGETS+=("$idx")
     local suffix="${panes}P"
@@ -116,13 +83,8 @@ load_panes() {
   ITEMS=()
   TARGETS=()
   EXTRA=()
-  local line
-  while IFS= read -r line; do
-    local idx cmd active tty
-    idx=$(echo "$line" | cut -d'|' -f1)
-    cmd=$(echo "$line" | cut -d'|' -f2)
-    active=$(echo "$line" | cut -d'|' -f3)
-    tty=$(echo "$line" | cut -d'|' -f4)
+  local idx cmd active tty
+  while IFS='|' read -r idx cmd active tty; do
     ITEMS+=("$cmd")
     TARGETS+=("$idx")
     local suffix="$tty"
@@ -131,26 +93,16 @@ load_panes() {
   done < <(tmux list-panes -t "$PARENT_SESSION:$PARENT_WINDOW" -F '#{pane_index}|#{pane_current_command}|#{pane_active}|#{pane_tty}' 2>/dev/null)
 }
 
-# Find the active item index (marked with *)
+# Find the active item index (marked with *) — sets REPLY
 find_active_index() {
   local i
   for i in "${!EXTRA[@]}"; do
     if [[ "${EXTRA[$i]}" == *"*"* ]]; then
-      echo "$i"
+      REPLY=$i
       return
     fi
   done
-  echo "0"
-}
-
-# ── Preview ────────────────────────────────────────────────────
-get_preview_target() {
-  local idx=$1
-  case $LEVEL in
-    0) echo "${TARGETS[$idx]}" ;;
-    1) echo "$PARENT_SESSION:${TARGETS[$idx]}" ;;
-    2) echo "$PARENT_SESSION:$PARENT_WINDOW.${TARGETS[$idx]}" ;;
-  esac
+  REPLY=0
 }
 
 # ── Rendering ──────────────────────────────────────────────────
@@ -169,11 +121,8 @@ render() {
   local header_h=1
   local content_h=$((TERM_LINES - header_h))
 
-  # ── Clear screen ──
-  printf '\033[2J'
-
   # ── Header / Breadcrumb ──
-  move_to 1 1
+  printf '\033[H'
   printf "${C_GREEN}${C_BOLD}"
   local breadcrumb=" tmux-picker"
   case $LEVEL in
@@ -187,8 +136,7 @@ render() {
   # ── Vertical border ──
   printf "${C_BORDER}"
   for ((r = header_h + 1; r <= TERM_LINES; r++)); do
-    move_to "$r" "$border_col"
-    printf '│'
+    printf '\033[%d;%dH│' "$r" "$border_col"
   done
   printf "${C_RESET}"
 
@@ -206,7 +154,7 @@ render() {
   for ((i = 0; i < visible_h; i++)); do
     local idx=$((OFFSET + i))
     local row=$((header_h + 1 + i))
-    move_to "$row" "$list_col"
+    printf '\033[%d;%dH' "$row" "$list_col"
 
     if ((idx >= total)); then
       # Empty line
@@ -259,25 +207,25 @@ render() {
   # ── Preview panel ──
   if ((total > 0)); then
     local target
-    target=$(get_preview_target "$CURSOR")
-    local preview_lines=()
-    local line
-    while IFS= read -r line; do
-      preview_lines+=("$line")
-    done < <(tmux capture-pane -ep -t "$target" 2>/dev/null || echo "(no preview)")
+    case $LEVEL in
+      0) target="${TARGETS[$CURSOR]}" ;;
+      1) target="$PARENT_SESSION:${TARGETS[$CURSOR]}" ;;
+      2) target="$PARENT_SESSION:$PARENT_WINDOW.${TARGETS[$CURSOR]}" ;;
+    esac
 
-    local max_preview_lines=$content_h
-    local pw=$((preview_w - 2)) # padding
-    for ((i = 0; i < max_preview_lines; i++)); do
-      local row=$((header_h + 1 + i))
-      move_to "$row" "$preview_col"
-      if ((i < ${#preview_lines[@]})); then
-        # Print preview line, truncated
-        printf ' %-*.*s' "$pw" "$pw" "${preview_lines[$i]}"
-      else
-        printf ' %*s' "$pw" ''
-      fi
+    local pw=$((preview_w - 2))
+    # Clear preview area first
+    local _r
+    for ((_r = 0; _r < content_h; _r++)); do
+      printf '\033[%d;%dH\033[K' "$((header_h + 1 + _r))" "$preview_col"
     done
+    # Draw preview content
+    local line_num=0
+    while IFS= read -r line; do
+      ((line_num >= content_h)) && break
+      printf '\033[%d;%dH %.*s' "$((header_h + 1 + line_num))" "$preview_col" "$pw" "$line"
+      ((++line_num))
+    done < <(tmux capture-pane -ep -t "$target" 2>/dev/null || echo "(no preview)")
   fi
 
   # ── Scrollbar indicator ──
@@ -286,8 +234,7 @@ render() {
     local sb_len=$((visible_h * visible_h / total))
     ((sb_len < 1)) && sb_len=1
     for ((i = 0; i < visible_h; i++)); do
-      local row=$((header_h + 1 + i))
-      move_to "$row" "$((TERM_COLS))"
+      printf '\033[%d;%dH' "$((header_h + 1 + i))" "$TERM_COLS"
       if ((i >= sb_top && i < sb_top + sb_len)); then
         printf "${C_GREEN}▐${C_RESET}"
       else
@@ -322,7 +269,7 @@ navigate_right() {
     PARENT_SESSION="${TARGETS[$CURSOR]}"
     LEVEL=1
     load_windows
-    CURSOR=$(find_active_index)
+    find_active_index; CURSOR=$REPLY
     OFFSET=0
   elif ((LEVEL == 1)); then
     # Save history
@@ -332,7 +279,7 @@ navigate_right() {
     PARENT_WINDOW="${TARGETS[$CURSOR]}"
     LEVEL=2
     load_panes
-    CURSOR=$(find_active_index)
+    find_active_index; CURSOR=$REPLY
     OFFSET=0
   fi
   # Level 2 — no deeper
@@ -381,29 +328,23 @@ read_key() {
 
   case "$c" in
     $'\x1b')
-      # Escape sequence — read more
       local seq
       IFS= read -rsn1 -t 0.05 seq || true
       if [[ "$seq" == "[" ]]; then
         IFS= read -rsn1 -t 0.05 seq || true
         case "$seq" in
-          A) echo "UP" ;;
-          B) echo "DOWN" ;;
-          C) echo "RIGHT" ;;
-          D) echo "LEFT" ;;
-          *) echo "ESC" ;;
+          A) REPLY=UP ;; B) REPLY=DOWN ;;
+          C) REPLY=RIGHT ;; D) REPLY=LEFT ;;
+          *) REPLY=ESC ;;
         esac
       else
-        echo "ESC"
+        REPLY=ESC
       fi
       ;;
-    k) echo "UP" ;;
-    j) echo "DOWN" ;;
-    l) echo "RIGHT" ;;
-    h) echo "LEFT" ;;
-    '') echo "ENTER" ;;
-    q) echo "QUIT" ;;
-    *) echo "UNKNOWN" ;;
+    k) REPLY=UP ;; j) REPLY=DOWN ;;
+    l) REPLY=RIGHT ;; h) REPLY=LEFT ;;
+    '') REPLY=ENTER ;; q) REPLY=QUIT ;;
+    *) REPLY=UNKNOWN ;;
   esac
 }
 
@@ -429,10 +370,9 @@ main() {
   render
 
   while true; do
-    local key
-    key=$(read_key)
+    read_key
 
-    case "$key" in
+    case "$REPLY" in
       UP)    navigate_up ;;
       DOWN)  navigate_down ;;
       RIGHT) navigate_right ;;
